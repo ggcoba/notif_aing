@@ -24,8 +24,12 @@ NITTER_INSTANCES = [
     "https://nitter.poast.org",
     "https://nitter.privacydev.net",
     "https://nitter.1d4.us",
+    "https://nitter.tiekoetter.com",
+    "https://nitter.space",
+    "https://nitter.mint.lgbt",
+    "https://nitter.lucahammer.com",
+    "https://nitter.pussthecat.org",
 ]
-
 # Simpan tweet ID terakhir per username
 last_seen = {}
 
