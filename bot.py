@@ -19,52 +19,58 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 X_USERNAMES = os.getenv("X_USERNAMES", "").split(",")
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "60"))
 
-NITTER_INSTANCES = [
-    "https://nitter.tiekoetter.com",
-    "https://nitter.poast.org",
-    "https://nitter.privacydev.net",
-    "https://nitter.1d4.us",
-    "https://nitter.space",
-    "https://nitter.mint.lgbt",
-    "https://nitter.lucahammer.com",
+# RSS sources - dicoba berurutan sampai ada yang berhasil
+RSS_SOURCES = [
+    "https://rsshub.app/twitter/user/{username}",
+    "https://nitter.tiekoetter.com/{username}/rss",
+    "https://nitter.poast.org/{username}/rss",
+    "https://nitter.privacydev.net/{username}/rss",
+    "https://nitter.lucahammer.com/{username}/rss",
+    "https://nitter.mint.lgbt/{username}/rss",
+    "https://nitter.space/{username}/rss",
+    "https://nitter.1d4.us/{username}/rss",
 ]
 
-last_seen = {}
-
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; RSSBot/1.0)",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/rss+xml, application/xml, text/xml, */*",
 }
 
+last_seen = {}
+
 
 def fetch_rss(username: str):
-    for instance in NITTER_INSTANCES:
-        url = f"{instance}/{username.strip()}/rss"
+    for source_template in RSS_SOURCES:
+        url = source_template.format(username=username.strip())
         try:
             r = requests.get(url, timeout=15, headers=HEADERS)
             if r.status_code == 200 and "<item>" in r.text:
-                log.info(f"Pakai instance: {instance} untuk @{username}")
-                return r.text, instance
+                log.info(f"Berhasil ambil RSS dari: {url}")
+                return r.text, url
             else:
-                log.debug(f"{instance} status={r.status_code}, tidak ada <item>")
+                log.debug(f"Gagal: {url} status={r.status_code}")
         except Exception as e:
-            log.debug(f"{instance} error: {e}")
+            log.debug(f"Error: {url} — {e}")
             continue
     return None, None
 
 
-def parse_rss(xml_text: str, instance: str):
+def parse_rss(xml_text: str, source_url: str):
     try:
         root = ET.fromstring(xml_text)
-        ns = {"atom": "http://www.w3.org/2005/Atom"}
         items = root.findall(".//item")
         results = []
         for item in items:
             title = item.findtext("title", "").strip()
             link = item.findtext("link", "").strip()
             guid = item.findtext("guid", link).strip()
-            # Bersihkan link dari nitter ke x.com
-            clean_link = link.replace(instance, "https://x.com")
+
+            # Bersihkan link ke x.com
+            clean_link = link
+            for domain in ["nitter.tiekoetter.com", "nitter.poast.org", "nitter.privacydev.net",
+                           "nitter.lucahammer.com", "nitter.mint.lgbt", "nitter.space", "nitter.1d4.us"]:
+                clean_link = clean_link.replace(f"https://{domain}", "https://x.com")
+
             results.append({"id": guid, "title": title, "link": clean_link})
         return results
     except Exception as e:
@@ -91,14 +97,14 @@ def send_telegram(message: str):
 
 
 def check_feed(username: str):
-    xml_text, instance = fetch_rss(username)
+    xml_text, source_url = fetch_rss(username)
     if not xml_text:
-        log.warning(f"Semua Nitter instance gagal untuk @{username}")
+        log.warning(f"Semua RSS source gagal untuk @{username}")
         return
 
-    entries = parse_rss(xml_text, instance)
+    entries = parse_rss(xml_text, source_url)
     if not entries:
-        log.info(f"RSS berhasil diambil tapi tidak ada item untuk @{username}")
+        log.info(f"RSS OK tapi tidak ada item untuk @{username}")
         return
 
     latest = entries[0]
@@ -106,7 +112,7 @@ def check_feed(username: str):
 
     if username not in last_seen:
         last_seen[username] = tweet_id
-        log.info(f"@{username} — inisialisasi, tweet terbaru disimpan")
+        log.info(f"@{username} — inisialisasi OK, memantau tweet baru...")
         return
 
     if tweet_id == last_seen[username]:
@@ -132,15 +138,15 @@ def main():
     usernames = [u.strip() for u in X_USERNAMES if u.strip()]
 
     if not usernames:
-        log.error("Tidak ada username X yang diset di X_USERNAMES!")
+        log.error("X_USERNAMES belum diset!")
         return
 
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         log.error("TELEGRAM_TOKEN atau TELEGRAM_CHAT_ID belum diset!")
         return
 
-    log.info(f"Memantau akun: {', '.join(['@' + u for u in usernames])}")
-    log.info(f"Interval polling: {POLL_INTERVAL} detik")
+    log.info(f"Memantau: {', '.join(['@' + u for u in usernames])}")
+    log.info(f"Interval: {POLL_INTERVAL} detik")
 
     send_telegram(
         f"✅ <b>Bot X Notifier aktif!</b>\n\n"
